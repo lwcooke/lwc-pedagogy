@@ -1,5 +1,5 @@
 """
-++ Rabi Flopping Utility Function Module
+++ Rabi Flopping Utility Function Module ++
 
 Contains functions for Monte-Carlo simulations of Atoms undergoing Rabi-Flopping including
 various conditions
@@ -8,7 +8,7 @@ module RabiFlopUtils
 
 export H_rwa, solve_rabi_problem, quantum_state
 
-using OrdinaryDiffEq, Plots, LinearAlgebra
+using OrdinaryDiffEq, LinearAlgebra
 
 
 const SIG_X = [0 1; 1 0]  # Pauli-x operator
