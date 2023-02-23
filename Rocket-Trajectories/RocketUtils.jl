@@ -7,7 +7,7 @@ module RocketUtils
 
 using LinearAlgebra, OrdinaryDiffEq
 
-export Body, solve_rocket_ODE, obj_circle
+export Body, solve_rocket_ODE, obj_circle, solve_mb_ODE
 
 const G = 1e-4  # Gravitational constant
 
@@ -102,6 +102,108 @@ Return points in a circle around Body based on its position and size
 function obj_circle(ob::Body)
     θ = range(0, 2π; length=500)
     ob.r[1] .+ ob.s * sin.(θ), ob.r[2] .+ ob.s * cos.(θ)
+end
+
+
+"""
+    gravity_mb(r1, r2, m1, m2; G)
+
+Compute the gravitational acceleration vector target (r1, m1) and another object (r2, m2)
+
+# Arguments:
+- `r1` : Position vector of the target
+- `m1` : Mass of the target.
+- `r2` : Position vector of the other object.
+- `m2` : Mass of the other object.
+- `G` : Gravitational constant
+"""
+function gravity_mb(r1, m1, r2, m2; G)
+    r21 = (r2 - r1) / norm(r1 - r2)  # Vector between objects
+    return G * m1 * m2 * r21 / norm(r1 - r2)^2  # Vectorized gravity
+end
+
+
+"""
+"""
+function mb_ODE(r, p, t)
+    ms, dims, G = p[1], p[2], p[3]  # Masses, dimensions, G
+
+    # Seperate into r and ṙ
+    rs = [[r[i], r[i+1]] for i in 1:Int(2 * dims):length(r)]
+    vs = [[r[i], r[i+1]] for i in (dims + 1):Int(2 * dims):length(r)]
+
+    # r̈
+    ac = [zeros(Float64, dims) for i in 1:length(rs)]
+    for i in 1:length(rs), j in 1:length(rs)
+        if i != j
+            ac[i] += gravity_mb(rs[i], ms[i], rs[j], ms[j]; G)
+        end
+    end
+
+    # Arrange output vector
+    dr = Float64[]
+    for i in 1:length(rs)
+        push!(dr, vs[i]...)
+        push!(dr, ac[i]...)
+    end
+
+    return dr
+end
+
+
+function check_collision(r, integrator)
+    dims = integrator.p[2]
+    rs = [[r[i], r[i+1]] for i in 1:Int(2 * dims):length(r)]
+    vs = [[r[i], r[i+1]] for i in (dims + 1):Int(2 * dims):length(r)]
+
+    flag, inds = false, Vector{Int}[]
+    for i in 1:length(rs), j in i:length(rs)
+        if i != j && norm(rs[i] - rs[j]) <= 1.
+            flag = true
+            push!(inds, [i ; j])
+        end
+    end
+    return flag, inds, rs, vs
+end
+
+
+function collision_affect!(integrator)
+    let r = integrator.u, ms = integrator.p[1]
+        fl, inds, rs, vs = check_collision(r, integrator)
+
+        for (i, j) in inds
+            v1, v2 = vs[i], vs[j]
+            m1, m2 = ms[i], ms[j]
+            vf1 = ((m1 - m2) * v1 + 2 * m2 * v2) / (m1 + m2)
+            vf2 = (2 * m1 * v1 + (m2 - m1) * v2) / (m1 + m2)
+            vs[i], vs[j] = vf1, vf2
+        end
+
+        # Arrange output vector
+        dr = Float64[]
+        for i in 1:length(rs)
+            push!(dr, rs[i]...)
+            push!(dr, vs[i]...)
+        end
+        integrator.u = dr
+    end
+end
+
+
+function solve_mb_ODE(rs, vs, ms, tspan; G)
+
+    r0 = Float64[]
+    for i in 1:length(rs)
+        push!(r0, rs[i]...)
+        push!(r0, vs[i]...)
+    end
+
+    # Elastic collision callback
+    condition(r, t, integrator) = check_collision(r, integrator)[1]
+    cb = DiscreteCallback(condition, collision_affect!)
+
+    prob = ODEProblem(mb_ODE, r0, (0.0, tspan), (ms, length(rs[1]), G))
+    return solve(prob, Tsit5(), callback=cb)
 end
 
 
