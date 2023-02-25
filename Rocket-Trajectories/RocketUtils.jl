@@ -126,7 +126,7 @@ end
 """
 """
 function mb_ODE(r, p, t)
-    ms, dims, G = p[1], p[2], p[3]  # Masses, dimensions, G
+    ms, dims, G = p[1], p[2], p[4]  # Masses, dimensions, G
 
     # Seperate into r and ṙ
     rs = [[r[i], r[i+1]] for i in 1:Int(2 * dims):length(r)]
@@ -153,12 +153,13 @@ end
 
 function check_collision(r, integrator)
     dims = integrator.p[2]
+    sizes = integrator.p[3]
     rs = [[r[i], r[i+1]] for i in 1:Int(2 * dims):length(r)]
     vs = [[r[i], r[i+1]] for i in (dims + 1):Int(2 * dims):length(r)]
 
     flag, inds = false, Vector{Int}[]
     for i in 1:length(rs), j in i:length(rs)
-        if i != j && norm(rs[i] - rs[j]) <= 1.
+        if i != j && norm(rs[i] - rs[j]) <= sizes[i] + sizes[j]
             flag = true
             push!(inds, [i ; j])
         end
@@ -190,7 +191,7 @@ function collision_affect!(integrator)
 end
 
 
-function solve_mb_ODE(rs, vs, ms, tspan; G)
+function solve_mb_ODE(rs, vs, ms, sizes, tspan; G)
 
     r0 = Float64[]
     for i in 1:length(rs)
@@ -202,7 +203,7 @@ function solve_mb_ODE(rs, vs, ms, tspan; G)
     condition(r, t, integrator) = check_collision(r, integrator)[1]
     cb = DiscreteCallback(condition, collision_affect!)
 
-    prob = ODEProblem(mb_ODE, r0, (0.0, tspan), (ms, length(rs[1]), G))
+    prob = ODEProblem(mb_ODE, r0, (0.0, tspan), (ms, length(rs[1]), sizes, G))
     return solve(prob, Tsit5(), callback=cb)
 end
 
