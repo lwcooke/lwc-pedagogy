@@ -9,24 +9,24 @@ using LinearAlgebra, OrdinaryDiffEq
 
 export Body, solve_rocket_ODE, obj_circle, solve_mb_ODE
 
-const G = 1e-4  # Gravitational constant
-
 """
-    Body{m::Float64, r::Vector{Float64}, s::Float64, label::String}
+    Body(m<:Float64, r<:Vector{Float64}, s<:Float64, label<:String, v=[0. ; 0.])
 
 Define a new massive object at a point in space.
 
 # Arguments:
 - `m::Float64` : Mass of the object.
 - `r::Vector{Float64}` : Position vector of the object.
-- `s::Float64` : Radius of the object.
+- `s::Float64` : Radius of the object assumed circular.
 - `label::String` : Name of the object.
+- `v::Vector{Float64}` : Velocity of object, by default set to [0. ; 0.].
 """
-struct Body{m<:Float64,r<:Vector{Float64},s<:Float64,label<:String}
-    m::m
-    r::r
-    s::s
-    label::label
+Base.@kwdef struct Body
+    m::Float64
+    r::Vector{Float64}
+    s::Float64
+    label::String
+    v::Vector{Float64} = [0. ; 0.]
 end
 
 
@@ -124,6 +124,15 @@ end
 
 
 """
+    mb_ODE(r, p, t)
+
+Many-body ODE problem, integrating r & ṙ for many objects with purely Newtonian gravity.
+
+# Arguments
+- `r` : Vector of coordinate. Must be alternating [r1... ; v1... ; r2... ; v2...]
+    with ri, vi position and velocity of ith object.
+- `p` : Parameters which contains, in this order, (mass_list, length(ri), obj_size_list, G)
+- `t` : Time, for integrator.
 """
 function mb_ODE(r, p, t)
     ms, dims, G = p[1], p[2], p[4]  # Masses, dimensions, G
@@ -151,6 +160,16 @@ function mb_ODE(r, p, t)
 end
 
 
+"""
+    check_collision(r, integrator)
+
+Function for checking if any objects in r are within the radii of one another, flagging a collision.
+
+# Arguments
+- `r` : Vector of coordinate. Must be alternating [r1... ; v1... ; r2... ; v2...]
+    with ri, vi position and velocity of ith object.
+- `integrator` : ODE solver, see OrdinaryDiffEq.jl
+"""
 function check_collision(r, integrator)
     dims = integrator.p[2]
     sizes = integrator.p[3]
@@ -168,6 +187,14 @@ function check_collision(r, integrator)
 end
 
 
+"""
+    collision_affect!(integrator)
+
+Computes effects of elastic collision between objects. Calls check_collision for affected bodies.
+
+# Arguments
+- `integrator` : ODE solver, see OrdinaryDiffEq.jl
+"""
 function collision_affect!(integrator)
     let r = integrator.u, ms = integrator.p[1]
         fl, inds, rs, vs = check_collision(r, integrator)
@@ -191,19 +218,32 @@ function collision_affect!(integrator)
 end
 
 
-function solve_mb_ODE(rs, vs, ms, sizes, tspan; G)
+"""
+    solve_mb_ODE(bods::Vector{Body}, tspan; G)
 
-    r0 = Float64[]
-    for i in 1:length(rs)
-        push!(r0, rs[i]...)
-        push!(r0, vs[i]...)
+Solve the many body problem for list of objects, `bods` providing initial conditions.
+
+# Arguments:
+- `bods::Vector{Body}` : List of Body structs providing initial conditions and attributes of each body.
+- `tspan` : Time-span for simulation.
+- `G` : Gravitational constant.
+"""
+function solve_mb_ODE(bods::Vector{Body}, tspan; G)
+
+    # Unpack Body structs
+    r0, mass, size = Float64[], Float64[], Float64[]
+    for i in 1:lastindex(bods)
+        push!(r0, bods[i].r...)
+        push!(r0, bods[i].v...)
+        push!(mass, bods[i].m)
+        push!(size, bods[i].s)
     end
 
     # Elastic collision callback
     condition(r, t, integrator) = check_collision(r, integrator)[1]
     cb = DiscreteCallback(condition, collision_affect!)
 
-    prob = ODEProblem(mb_ODE, r0, (0.0, tspan), (ms, length(rs[1]), sizes, G))
+    prob = ODEProblem(mb_ODE, r0, (0.0, tspan), (mass, length(bods[1].r), size, G))
     return solve(prob, Tsit5(), callback=cb)
 end
 
