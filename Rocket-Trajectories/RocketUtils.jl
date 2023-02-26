@@ -62,7 +62,7 @@ function rocket_ODE(r, p, t)
     # Acceleration
     a = zeros(halfdim)
     for b in bods
-        a += gravity(r[1:halfdim], m, b)
+        a += gravity(r[1:halfdim], m, b) / m
     end
 
     return [r[halfdim+1:2*halfdim]; a]
@@ -106,6 +106,17 @@ end
 
 
 """
+    obj_circle(ob::Body, r::Vector{Float64})
+
+Return points in a circle around Body based on specified position r
+"""
+function obj_circle(ob::Body, r::Vector{Float64})
+    θ = range(0, 2π; length=500)
+    r[1] .+ ob.s * sin.(θ), r[2] .+ ob.s * cos.(θ)
+end
+
+
+"""
     gravity_mb(r1, r2, m1, m2; G)
 
 Compute the gravitational acceleration vector target (r1, m1) and another object (r2, m2)
@@ -145,7 +156,7 @@ function mb_ODE(r, p, t)
     ac = [zeros(Float64, dims) for i in 1:length(rs)]
     for i in 1:length(rs), j in 1:length(rs)
         if i != j
-            ac[i] += gravity_mb(rs[i], ms[i], rs[j], ms[j]; G)
+            ac[i] += gravity_mb(rs[i], ms[i], rs[j], ms[j]; G) / ms[i]
         end
     end
 
